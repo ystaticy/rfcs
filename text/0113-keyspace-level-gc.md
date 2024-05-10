@@ -1,9 +1,9 @@
 # Keyspace level GC
 
-## Summary
-
 - RFC PR: https://github.com/tikv/rfcs/pull/113
 - Tracking Issue: https://github.com/tikv/tikv/issues/16896
+
+## Summary
 
 TiKV support keyspace level GC.
 
