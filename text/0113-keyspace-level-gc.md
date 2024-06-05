@@ -1,15 +1,15 @@
 # Keyspace level GC
 
-## Summary
-
 - RFC PR: https://github.com/tikv/rfcs/pull/113
 - Tracking Issue: https://github.com/tikv/tikv/issues/16896
 
-TiKV support keyspace level GC.
+## Summary
 
-## Concepts of GC management type:
+TiKV support [keyspace][1] level GC (garbage collection).
 
-1. Global GC: 
+## Concepts of GC management type
+
+1. Global GC:
    - Represents the previous default GC logic; there is a TiDB calculate the global GC safe point for the whole cluster.
    - The default GC management type for keyspace is Global GC.
 2. Keyspace level GC:
@@ -18,9 +18,13 @@ TiKV support keyspace level GC.
 
 ## Motivation
 
-Previously, TiDB has supported the deployment of multiple TiDB clusters with different keyspaces on a single PD TiKV cluster.
-In the whole of TiDB clusters, one global TiDB GC worker (A TiDB server without Keyspace configuration) is in charge of calculating the global GC safe point and resolving locks, While each keyspace's TiDB has their own GC Worker. The GC Worker of each keyspace use the global GC safe point to do "delete-range" in its keyspace ranges.
-But in this implementation the calculation of the global GC depends on the oldest safe point and min start ts of all keyspaces. When the GC safe points of any keyspace is slow, GC of all other keyspaces will be blocked.
+In order to support multi-tenat deployment of TiDB in a shared TiKV cluster, TiDB now supports keyspace feature. A global TiDB GC worker (A TiDB server without Keyspace configuration) shared by all TiDB is in charge of calculating the global GC safe point and resolving locks, While each keyspace's TiDB has their own GC Worker. The GC Worker of each keyspace use the global GC safe point to do "delete-range" in its keyspace ranges.
+
+```math
+GCSafePoint = Min\left\{GlobalSafePoint,\forall GCSafePoint\in Keyspaces\right\}
+```
+
+But in this implementation the calculation of the global GC depends on the oldest safe point and min start ts of all keyspaces. When the GC safe points of any keyspace is small, GC of all other keyspaces will be blocked.
 
 So we propose the **Keyspace Level GC**:
 
@@ -49,10 +53,10 @@ In GC process, it parses the keyspace id from the data key, use the keyspace met
     - Create a keyspace level gc watch service : Watch the etcd path of the keyspace GC safe point to get the GC safe point with keyspace level GC enabled, put it in the mapping from keyspace id to keyspace level gc.
 
 2. How to get GC safe point by mvcc key in Compaction Filter:
-![img.png](../media/keyspace-level-gc-get-gc-sp.png)
+ ![img.png](../media/keyspace-level-gc-get-gc-sp.png)
 
 3. How to determine if a keyspace uses a global GC safe point:
-![img.png](../media/keyspace-level-gc-is-global-gc.png)
+ ![img.png](../media/keyspace-level-gc-is-global-gc.png)
 
 4. Use GC safe point to optimize trigger timing and assert judgment:
    1. In the global GC, it will skip GC when GC safe point is 0 in create_compaction_filter.
@@ -65,3 +69,5 @@ In GC process, it parses the keyspace id from the data key, use the keyspace met
 5. Support use keyspace level GC for data import and export:
    1. When using BR, CDC, Lightning, Dumpling to import and export data specified keyspace, you need to update the service safe point for the specified keyspace. When the task starts, When the task starts, it needs to get keyspace meta first to determine whether to execute the keyspace level gc logic.
    2. For global BR, the global BR service safe point will also be required as one of the conditions of the block keyspace level GC, when the keyspace is required to update the service safe point.
+
+[1]: https://github.com/tikv/rfcs/blob/master/text/0069-api-v2.md#new-key-value-codec
